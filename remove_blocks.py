@@ -168,9 +168,9 @@ def lz4_compress(data):
         block = data[i:i + 65536]
         comp = lz4.block.compress(block, store_size=False)
         token, body = (0x26, comp) if len(comp) < len(block) else (0x16, block)
+        check = xxhash.xxh32_intdigest(block, 0x9747B28C) & 0x0FFFFFFF
         out += b"LZ4Block" + struct.pack(
-            "<BiiI", token, len(body), len(block),
-            xxhash.xxh32_intdigest(block, 0x9747B28C)) + body
+            "<BiiI", token, len(body), len(block), check) + body
     return bytes(out + b"LZ4Block" + struct.pack("<BiiI", 0x16, 0, 0, 0))
 
 
