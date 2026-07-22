@@ -44,6 +44,11 @@ SIGN_IDS = {"minecraft:sign", "minecraft:hanging_sign"}
 EMPTY_MSGS = {"", '""', '{"text":""}', '{"text": ""}'}
 PREFILTER = re.compile(b"|".join(re.escape(s.encode()) for s in TARGETS | SIGN_IDS))
 
+# False로 두면 팔레트 정규화(repair)만 수행하고, 블록 제거/표지판 텍스트 삭제는
+# 건너뜁니다. 다시 켜고 싶으면 True로 되돌리면 됩니다.
+REMOVE_TARGET_BLOCKS = False
+CLEAR_SIGN_TEXT = False
+
 
 def decode_indices(data, palette_len):
     bits = max((palette_len - 1).bit_length(), 4)
@@ -77,8 +82,10 @@ def patch_section(sec, cx, cz, records):
     if not palette:
         return False
 
-    targets = {i: str(e.get("Name", "")) for i, e in enumerate(palette)
-               if str(e.get("Name", "")) in TARGETS}
+    targets = {}
+    if REMOVE_TARGET_BLOCKS:
+        targets = {i: str(e.get("Name", "")) for i, e in enumerate(palette)
+                   if str(e.get("Name", "")) in TARGETS}
     if not targets and len({str(e) for e in palette}) == len(palette):
         return False
 
@@ -154,11 +161,12 @@ def patch_chunk(root, records):
             root["block_entities"] = bes = nbtlib.List[nbtlib.Compound](keep)
             changed = True
 
-    for be in bes:
-        if str(be.get("id", "")) in SIGN_IDS and clear_sign_text(be):
-            records.append((int(be.get("x", 0)), int(be.get("y", 0)),
-                            int(be.get("z", 0)), "sign", "내용삭제"))
-            changed = True
+    if CLEAR_SIGN_TEXT:
+        for be in bes:
+            if str(be.get("id", "")) in SIGN_IDS and clear_sign_text(be):
+                records.append((int(be.get("x", 0)), int(be.get("y", 0)),
+                                int(be.get("z", 0)), "sign", "내용삭제"))
+                changed = True
     return changed
 
 

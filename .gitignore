@@ -41,3 +41,6 @@ out/
 # other stuff
 run/
 logs/
+/world
+*.zip
+removed_blocks.csv
