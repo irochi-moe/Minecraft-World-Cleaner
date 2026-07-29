@@ -40,14 +40,34 @@ TARGETS = {
     "minecraft:red_shulker_box",
     "minecraft:black_shulker_box",
 }
+PLANT_TARGETS = {  # 공기로 치환 (낮은 잔디 short_grass/grass는 남긴다)
+    "minecraft:rose_bush",
+    "minecraft:lilac",
+    "minecraft:short_grass",
+    "minecraft:grass",
+    "minecraft:tall_grass",
+    "minecraft:fern",
+    "minecraft:large_fern",
+    "minecraft:sunflower",
+    "minecraft:sweet_berry_bush",
+}
+WATER_PLANT_TARGETS = {  # 물로 치환
+    "minecraft:kelp",
+    "minecraft:kelp_plant",
+    "minecraft:seagrass",
+    "minecraft:tall_seagrass",
+}
 SIGN_IDS = {"minecraft:sign", "minecraft:hanging_sign"}
 EMPTY_MSGS = {"", '""', '{"text":""}', '{"text": ""}'}
-PREFILTER = re.compile(b"|".join(re.escape(s.encode()) for s in TARGETS | SIGN_IDS))
+PREFILTER = re.compile(b"|".join(
+    re.escape(s.encode())
+    for s in TARGETS | SIGN_IDS | PLANT_TARGETS | WATER_PLANT_TARGETS))
 
 # False로 두면 팔레트 정규화(repair)만 수행하고, 블록 제거/표지판 텍스트 삭제는
 # 건너뜁니다. 다시 켜고 싶으면 True로 되돌리면 됩니다.
 REMOVE_TARGET_BLOCKS = False
 CLEAR_SIGN_TEXT = False
+REMOVE_PLANTS = True
 
 
 def decode_indices(data, palette_len):
@@ -76,17 +96,37 @@ def encode_indices(indices, palette_len):
     return longs
 
 
+def canon_key(entry):
+    name = str(entry.get("Name", ""))
+    items = []
+    for k, v in (entry.get("Properties") or {}).items():
+        k, v = str(k), str(v)
+        if k == "waterlogged" and v == "false" and name.endswith("_leaves"):
+            continue
+        items.append((k, v))
+    return name, tuple(sorted(items))
+
+
 def patch_section(sec, cx, cz, records):
     bs = sec.get("block_states")
     palette = bs.get("palette") if bs else None
     if not palette:
         return False
 
+    air = nbtlib.Compound({"Name": nbtlib.String("minecraft:air")})
+    water = nbtlib.Compound({"Name": nbtlib.String("minecraft:water"),
+                             "Properties": nbtlib.Compound(
+                                 {"level": nbtlib.String("0")})})
     targets = {}
-    if REMOVE_TARGET_BLOCKS:
-        targets = {i: str(e.get("Name", "")) for i, e in enumerate(palette)
-                   if str(e.get("Name", "")) in TARGETS}
-    if not targets and len({str(e) for e in palette}) == len(palette):
+    for i, e in enumerate(palette):
+        name = str(e.get("Name", ""))
+        if REMOVE_TARGET_BLOCKS and name in TARGETS:
+            targets[i] = (name, "제거", air)
+        elif REMOVE_PLANTS and name in PLANT_TARGETS:
+            targets[i] = (name, "제거", air)
+        elif REMOVE_PLANTS and name in WATER_PLANT_TARGETS:
+            targets[i] = (name, "물치환", water)
+    if not targets and len({canon_key(e) for e in palette}) == len(palette):
         return False
 
     data = bs.get("data")
@@ -96,15 +136,15 @@ def patch_section(sec, cx, cz, records):
 
     if targets:
         bx, by, bz = cx * 16, int(sec.get("Y", 0)) * 16, cz * 16
-        records += [(bx + (p & 15), by + (p >> 8), bz + (p >> 4 & 15), targets[i], "제거")
+        records += [(bx + (p & 15), by + (p >> 8), bz + (p >> 4 & 15),
+                     targets[i][0], targets[i][1])
                     for p, i in enumerate(indices) if i in targets]
 
-    air = nbtlib.Compound({"Name": nbtlib.String("minecraft:air")})
     new_palette, remap, old_to_new = [], {}, []
     for i, entry in enumerate(palette):
         if i in targets:
-            entry = air
-        key = str(entry)
+            entry = targets[i][2]
+        key = canon_key(entry)
         if key not in remap:
             remap[key] = len(new_palette)
             new_palette.append(entry)

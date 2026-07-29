@@ -44,3 +44,4 @@ logs/
 /world
 *.zip
 removed_blocks.csv
+/__pycache__
