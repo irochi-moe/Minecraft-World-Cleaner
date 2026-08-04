@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import csv, gzip, io, os, re, struct, sys, time, zlib
+import contextlib, csv, gzip, io, os, re, struct, sys, time, zlib
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import nbtlib
@@ -68,6 +68,7 @@ PREFILTER = re.compile(b"|".join(
 REMOVE_TARGET_BLOCKS = False
 CLEAR_SIGN_TEXT = False
 REMOVE_PLANTS = True
+WRITE_CSV = False
 
 
 def decode_indices(data, palette_len):
@@ -335,9 +336,11 @@ def main():
     total_chunks, total_converted, total_blocks = 0, 0, Counter()
     csv_path = os.path.abspath("removed_blocks.csv")
 
-    with open(csv_path, "w", newline="", encoding="utf-8-sig") as cf:
-        writer = csv.writer(cf)
-        writer.writerow(["dimension", "x", "y", "z", "block", "action"])
+    with (open(csv_path, "w", newline="", encoding="utf-8-sig")
+          if WRITE_CSV else contextlib.nullcontext()) as cf:
+        writer = csv.writer(cf) if WRITE_CSV else None
+        if writer:
+            writer.writerow(["dimension", "x", "y", "z", "block", "action"])
 
         for dim, rdir in dirs:
             if not os.path.isdir(rdir):
@@ -365,7 +368,8 @@ def main():
                     for row in records:
                         name, act = row[4], row[5]
                         counts[name if act == "제거" else f"{name}({act})"] += 1
-                        writer.writerow(row)
+                        if writer:
+                            writer.writerow(row)
                     total_blocks += counts
                     detail = ", ".join(f"{k.split(':')[-1]} {v:,}"
                                        for k, v in sorted(counts.items()))
@@ -379,7 +383,8 @@ def main():
         for name, cnt in sorted(total_blocks.items()):
             print(f"  {name}: {cnt:,}개")
         print(f"  합계: {sum(total_blocks.values()):,}개")
-        print(f"좌표 목록: {csv_path}")
+        if WRITE_CSV:
+            print(f"좌표 목록: {csv_path}")
 
 
 if __name__ == "__main__":
